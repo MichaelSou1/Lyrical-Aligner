@@ -1,0 +1,43 @@
+# ══════════════════════════════════════════════════════════════════
+# Lyrical-Aligner — Python Dependencies
+# ══════════════════════════════════════════════════════════════════
+# Python 3.10+ required
+#
+# GPU Install (recommended — CUDA 12.1):
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+#   pip install -r requirements.txt
+#
+# CPU-only Install:
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements.txt
+# ══════════════════════════════════════════════════════════════════
+
+# ── ASR ────────────────────────────────────────────────────────────
+faster-whisper>=1.0.0          # CTranslate2-based Whisper inference
+
+# ── Audio Separation ───────────────────────────────────────────────
+demucs>=4.0.1                  # Facebook Research — htdemucs / mdx models
+
+# ── Audio I/O & Processing ─────────────────────────────────────────
+ffmpeg-python>=0.2.0           # FFmpeg Python bindings (requires ffmpeg in PATH)
+soundfile>=0.12.1              # Read/write WAV, FLAC, OGG
+numpy>=1.24.0                  # Numerical computing (transitive, pinned for stability)
+librosa>=0.10.0                # Audio analysis utilities
+pydub>=0.25.1                  # High-level audio manipulation (MP3 decode fallback)
+
+# ── Utilities ──────────────────────────────────────────────────────
+loguru>=0.7.0                  # Structured logging with colours
+tqdm>=4.65.0                   # Progress bars for long-running ops
+
+# ── Translation (optional) ─────────────────────────────────────────
+# Required for --target-lang feature (google / deepl backends)
+deep-translator>=1.9.0         # Wraps Google Translate & DeepL (free tier available)
+
+# Uncomment for fully offline translation (argos backend)
+# argostranslate>=1.9.0        # Local neural translation; downloads models on first use
+
+# ── Optional: LLM-based post-processing ────────────────────────────
+# Uncomment to enable GPT/local-LLM refinement in postprocessor.py
+# openai>=1.0.0
+# transformers>=4.38.0
+# accelerate>=0.27.0
