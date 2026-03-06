@@ -1,30 +1,3 @@
-"""
-vocal_extractor.py
-──────────────────
-Extracts the vocal stem from a mixed music track using Facebook's Demucs.
-
-Supported Demucs models
-───────────────────────
-  htdemucs     — 4-stem hybrid Transformer (drums / bass / other / vocals)
-  htdemucs_ft  — Fine-tuned htdemucs; higher quality, slower runtime
-  htdemucs_6s  — 6-stem variant (adds guitar + piano)
-  mdx_extra    — MDX-Net-based model, strong on pop/rock
-
-Demucs is invoked via ``subprocess`` so that its large memory footprint is
-released before the Whisper model is loaded into GPU VRAM.
-
-Output
-──────
-A 44 100 Hz stereo WAV file containing *only* the vocal track, written to
-``<out_dir>/<stem>_vocals.wav``.
-
-Usage (CLI)
-───────────
-    python vocal_extractor.py song.mp3
-    python vocal_extractor.py song.mp3 --model htdemucs_ft --device cpu
-    python vocal_extractor.py song.mp3 --out-dir ./my_output
-"""
-
 from __future__ import annotations
 
 import shutil
@@ -39,19 +12,7 @@ import config
 
 
 class VocalExtractor:
-    """
-    Wraps Demucs to isolate the vocal stem from a music track.
-
-    Args:
-        model:    Demucs model name (default: ``config.DEMUCS_MODEL``).
-        device:   ``"cuda"`` or ``"cpu"``.
-        segment:  Chunk size in seconds (reduce if VRAM is exhausted).
-        overlap:  Overlap fraction between consecutive chunks.
-        shifts:   Number of random-shift augmentations (≥2 improves quality
-                  at the cost of extra compute).
-        out_dir:  Directory for output WAV files.  Defaults to
-                  ``config.TEMP_DIR/demucs``.
-    """
+    """Extracts vocals from a music track using Demucs."""
 
     def __init__(
         self,
@@ -70,27 +31,7 @@ class VocalExtractor:
         self.out_dir = Path(out_dir) if out_dir else config.TEMP_DIR / "demucs"
         self.out_dir.mkdir(parents=True, exist_ok=True)
 
-    # ──────────────────────────────────────────────────────────────
-    # Public API
-    # ──────────────────────────────────────────────────────────────
-
     def extract(self, audio_path: str | Path) -> Path:
-        """
-        Separate vocals from *audio_path* and return the vocal WAV path.
-
-        The method runs Demucs in a temporary directory and copies the
-        resulting ``vocals.wav`` to ``self.out_dir``.
-
-        Args:
-            audio_path: Path to the input audio file (mp3 / wav / flac / …).
-
-        Returns:
-            Absolute :class:`~pathlib.Path` to the extracted vocal WAV.
-
-        Raises:
-            FileNotFoundError: If *audio_path* does not exist.
-            RuntimeError:      If Demucs exits with a non-zero return code.
-        """
         audio_path = Path(audio_path).resolve()
         if not audio_path.exists():
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
@@ -112,18 +53,7 @@ class VocalExtractor:
         logger.success(f"[VocalExtractor] Vocals → {dest}")
         return dest
 
-    # ──────────────────────────────────────────────────────────────
-    # Internal helpers
-    # ──────────────────────────────────────────────────────────────
-
     def _run_demucs(self, audio_path: Path, tmp_dir: Path) -> None:
-        """
-        Invoke Demucs via ``python -m demucs`` in a subprocess.
-
-        Using ``--two-stems vocals`` makes Demucs output only
-        ``vocals.wav`` + ``no_vocals.wav``, which is ~2× faster than
-        full 4-stem separation.
-        """
         cmd = [
             "python", "-m", "demucs",
             "--name",       self.model,
@@ -131,7 +61,7 @@ class VocalExtractor:
             "--segment",    str(self.segment),
             "--overlap",    str(self.overlap),
             "--shifts",     str(self.shifts),
-            "--two-stems",  "vocals",   # vocals vs. accompaniment only
+            "--two-stems",  "vocals",
             "--out",        str(tmp_dir),
             str(audio_path),
         ]
@@ -140,25 +70,16 @@ class VocalExtractor:
         result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
 
         if result.returncode != 0:
-            logger.error(result.stderr[-3000:])   # last 3 kB of stderr
+            logger.error(result.stderr[-3000:])
             raise RuntimeError(
                 f"Demucs exited with code {result.returncode}.\n"
                 f"Stderr (last 3 kB):\n{result.stderr[-3000:]}"
             )
 
     def _find_vocals(self, tmp_dir: Path) -> Path:
-        """
-        Locate the ``vocals.wav`` produced by Demucs.
-
-        Demucs writes:
-          ``<out>/<model_name>/<track_stem>/vocals.wav``
-
-        Falls back to any ``*.wav`` whose name contains ``"vocals"``.
-        """
         candidates = list(tmp_dir.rglob("vocals.wav"))
 
         if not candidates:
-            # Broader search
             candidates = [p for p in tmp_dir.rglob("*.wav") if "vocal" in p.stem.lower()]
 
         if not candidates:
@@ -173,7 +94,6 @@ class VocalExtractor:
         return candidates[0]
 
 
-# ── CLI ───────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import argparse

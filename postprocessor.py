@@ -33,21 +33,13 @@ import config
 from transcription_engine import Segment, WordToken
 
 
-# ── Compiled regex patterns ───────────────────────────────────────
-
-# Consecutive duplicate words: "love love" → "love"
+# regex patterns
 _RE_REPEAT_WORD = re.compile(r'\b(\w{2,})\s+\1\b', re.IGNORECASE | re.UNICODE)
-
-# Leading junk (punctuation / whitespace)
-_RE_LEADING_JUNK = re.compile(r'^[\s,.\-\–\—!?;:]+')
-
-# Trailing junk (punctuation / whitespace, but *not* ellipsis dots)
-_RE_TRAILING_JUNK = re.compile(r'[\s,\-\–\—;:]+$')
-
-# Collapse multiple consecutive spaces into one
+_RE_LEADING_JUNK = re.compile(r'^[\s,.\-\u2013\u2014!?;:]+')
+_RE_TRAILING_JUNK = re.compile(r'[\s,\-\u2013\u2014;:]+$')
 _RE_MULTI_SPACE = re.compile(r'\s{2,}')
 
-# Known Whisper hallucination phrases (extend as needed)
+# known Whisper hallucination phrases
 _RE_HALLUCINATION = re.compile(
     r'('
     r'thanks\s+for\s+watching'
@@ -95,20 +87,7 @@ class PostProcessor:
         self.fix_repetitions    = fix_repetitions
         self.fix_hallucinations = fix_hallucinations
 
-    # ──────────────────────────────────────────────────────────────
-    # Public API
-    # ──────────────────────────────────────────────────────────────
-
     def process(self, segments: List[Segment]) -> List[Segment]:
-        """
-        Run the full post-processing pipeline on *segments*.
-
-        Args:
-            segments: Raw :class:`Segment` list from the transcription engine.
-
-        Returns:
-            New, corrected list of :class:`Segment` objects.
-        """
         segs = deepcopy(segments)
         n_in = len(segs)
 
@@ -125,12 +104,7 @@ class PostProcessor:
         )
         return segs
 
-    # ──────────────────────────────────────────────────────────────
-    # Individual passes
-    # ──────────────────────────────────────────────────────────────
-
     def _filter_short(self, segs: List[Segment]) -> List[Segment]:
-        """Remove segments whose duration or text is below threshold."""
         out = [
             s for s in segs
             if (s.end - s.start) >= self.min_duration and s.text.strip()
@@ -141,7 +115,6 @@ class PostProcessor:
         return out
 
     def _remove_hallucinations(self, segs: List[Segment]) -> List[Segment]:
-        """Drop segments matching known Whisper hallucination patterns."""
         if not self.fix_hallucinations:
             return segs
         out = [s for s in segs if not _RE_HALLUCINATION.search(s.text)]
@@ -151,11 +124,6 @@ class PostProcessor:
         return out
 
     def _clean_text(self, segs: List[Segment]) -> List[Segment]:
-        """
-        Strip leading/trailing junk punctuation and collapse multiple spaces.
-
-        Operates in-place on the copied list.
-        """
         for seg in segs:
             t = seg.text
             t = _RE_LEADING_JUNK.sub("", t)
@@ -165,13 +133,6 @@ class PostProcessor:
         return segs
 
     def _remove_repetitions(self, segs: List[Segment]) -> List[Segment]:
-        """
-        Collapse consecutive duplicate words within each segment.
-
-        Example: ``"I love love you"`` → ``"I love you"``
-
-        Applied iteratively until no more duplicates remain.
-        """
         if not self.fix_repetitions:
             return segs
         for seg in segs:
@@ -182,13 +143,6 @@ class PostProcessor:
         return segs
 
     def _merge_segments(self, segs: List[Segment]) -> List[Segment]:
-        """
-        Merge adjacent segments whose silence gap ≤ ``self.merge_gap`` **and**
-        whose combined text length stays within ``self.max_chars``.
-
-        Word token lists are concatenated so word-level timestamps remain
-        accurate.
-        """
         if not segs:
             return segs
 
@@ -197,7 +151,7 @@ class PostProcessor:
         for curr in segs[1:]:
             prev = merged[-1]
             gap  = curr.start - prev.end
-            combined_len = len(prev.text) + len(curr.text) + 1   # +1 for space
+            combined_len = len(prev.text) + len(curr.text) + 1
 
             if gap <= self.merge_gap and combined_len <= self.max_chars:
                 prev.text  = f"{prev.text} {curr.text}".strip()
@@ -210,13 +164,6 @@ class PostProcessor:
         return merged
 
     def _split_long_lines(self, segs: List[Segment]) -> List[Segment]:
-        """
-        Split segments whose text exceeds ``self.max_chars`` at natural word
-        boundaries, redistributing word tokens to each sub-segment.
-
-        Segments without word tokens are left unchanged to avoid losing
-        timing information.
-        """
         result: List[Segment] = []
         for seg in segs:
             if len(seg.text) <= self.max_chars or not seg.words:
@@ -225,21 +172,13 @@ class PostProcessor:
                 result.extend(self._split_by_words(seg))
         return result
 
-    # ──────────────────────────────────────────────────────────────
-    # Helpers
-    # ──────────────────────────────────────────────────────────────
-
     def _split_by_words(self, seg: Segment) -> List[Segment]:
-        """
-        Greedily partition ``seg.words`` into chunks whose combined text
-        length ≤ ``self.max_chars``, each yielding a new :class:`Segment`.
-        """
         chunks:        List[List[WordToken]] = []
         current_chunk: List[WordToken]       = []
         current_len                          = 0
 
         for word in seg.words:
-            word_len = len(word.word) + 1   # +1 for a separating space
+            word_len = len(word.word) + 1
 
             if current_len + word_len > self.max_chars and current_chunk:
                 chunks.append(current_chunk)
@@ -265,7 +204,6 @@ class PostProcessor:
         return result
 
 
-# ── CLI ───────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import argparse

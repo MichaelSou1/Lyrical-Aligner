@@ -1,24 +1,3 @@
-"""
-download_models.py
-──────────────────
-Handles downloading / caching of faster-whisper models and verifies
-that Demucs weights are available via torch.hub.
-
-Usage
-─────
-    # Download default model (large-v3) from HuggingFace Hub
-    python download_models.py
-
-    # Specify a different model size
-    python download_models.py --model medium
-
-    # Load from a local directory (no network required)
-    python download_models.py --local D:/models/faster-whisper-large-v3
-
-    # Skip Demucs check (faster when only Whisper is needed)
-    python download_models.py --skip-demucs
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -31,43 +10,21 @@ from loguru import logger
 import config
 
 
-# ── Whisper loader ────────────────────────────────────────────────
-
 def load_whisper_model(
     model_size_or_path: str = config.WHISPER_MODEL_SIZE,
     device: str = config.WHISPER_DEVICE,
     compute_type: str = config.WHISPER_COMPUTE_TYPE,
 ):
-    """
-    Load a faster-whisper WhisperModel from HuggingFace Hub or a local path.
-
-    Args:
-        model_size_or_path: Model name (e.g. ``"large-v3"``) **or** an absolute
-                            path to a locally stored model directory.
-        device:             ``"cuda"`` or ``"cpu"``.
-        compute_type:       ``"float16"`` (GPU) / ``"int8"`` (CPU) /
-                            ``"int8_float16"`` / ``"float32"``.
-
-    Returns:
-        A loaded :class:`faster_whisper.WhisperModel` instance.
-
-    Raises:
-        RuntimeError: If CUDA is requested but not available and no fallback
-                      is configured.
-    """
     from faster_whisper import WhisperModel
 
-    # Prefer a local path if explicitly configured in config.py
     source = config.WHISPER_LOCAL_MODEL_PATH or model_size_or_path
 
-    # Resolve: is it a local directory?
     if Path(source).is_dir():
         logger.info(f"[Whisper] Loading model from local path → {source}")
     else:
         logger.info(f"[Whisper] Downloading / loading model from Hub → {source}")
         logger.info(f"          Cache directory: {config.MODELS_DIR / 'whisper'}")
 
-    # CUDA availability guard
     if device == "cuda":
         try:
             import torch
@@ -97,18 +54,7 @@ def load_whisper_model(
     return model
 
 
-# ── Demucs verifier ───────────────────────────────────────────────
-
 def verify_demucs_model(model_name: str = config.DEMUCS_MODEL) -> None:
-    """
-    Trigger a Demucs weight download if the model is not already cached.
-
-    Demucs manages its own cache via ``torch.hub``; calling
-    ``demucs.pretrained.get_model`` the first time downloads the weights.
-
-    Args:
-        model_name: Demucs model identifier, e.g. ``"htdemucs"``.
-    """
     try:
         import demucs.pretrained as dp  # type: ignore[import]
         logger.info(f"[Demucs] Verifying model weights → {model_name}")
@@ -119,7 +65,6 @@ def verify_demucs_model(model_name: str = config.DEMUCS_MODEL) -> None:
         raise
 
 
-# ── CLI ───────────────────────────────────────────────────────────
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -169,7 +114,6 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = _build_parser().parse_args()
 
-    # Override local path if provided via CLI
     if args.local:
         config.WHISPER_LOCAL_MODEL_PATH = args.local
 

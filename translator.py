@@ -1,50 +1,3 @@
-"""
-translator.py
-─────────────
-Optional translation layer for Lyrical-Aligner.
-
-After ASR transcription, if the user specifies a ``--target-lang`` that
-differs from the detected source language, this module translates each
-segment's text to the requested language before LRC generation.
-
-⚠️  Word-level timestamps are CLEARED after translation, because translated
-    words no longer map to the original audio frames.  Segment-level
-    ``start`` / ``end`` times are fully preserved.
-
-Supported backends
-──────────────────
-  google  — deep-translator GoogleTranslator
-            Free, no API key, requires internet access.
-
-  deepl   — deep-translator DeepLTranslator
-            Higher quality; requires a free/paid DeepL API key.
-            Set the ``DEEPL_API_KEY`` env var or pass ``--deepl-key``.
-
-  argos   — argostranslate (fully offline / local)
-            Language packages are downloaded once on first use.
-            Pre-download a pair with:
-                python translator.py --install-argos <src> <tgt>
-
-Language codes
-──────────────
-All codes follow ISO-639-1 (e.g. "en", "zh", "ja", "ko", "fr", "de").
-The module normalises them per-backend automatically.
-
-Usage (CLI)
-───────────
-    # Translate segments JSON to Chinese using Google (default)
-    python translator.py segments.json --target zh --out translated.json
-
-    # Use DeepL (set DEEPL_API_KEY env var first)
-    python translator.py segments.json --target en --backend deepl
-
-    # Use offline argostranslate
-    python translator.py segments.json --target ja --backend argos
-
-    # Pre-install argos language pair
-    python translator.py --install-argos en zh
-"""
-
 from __future__ import annotations
 
 import copy
@@ -60,14 +13,11 @@ import config
 from transcription_engine import Segment, WordToken
 
 
-# ── Language code normalisers ─────────────────────────────────────
-# Maps ISO-639-1 codes (as returned by Whisper) → backend-specific codes.
-
 _TO_GOOGLE: dict[str, str] = {
-    "zh":  "zh-CN",   # Simplified Chinese
-    "zht": "zh-TW",   # Traditional Chinese (convenience alias)
-    "he":  "iw",      # Hebrew — legacy code for older Google endpoints
-    "jv":  "jw",      # Javanese — legacy code
+    "zh":  "zh-CN",
+    "zht": "zh-TW",
+    "he":  "iw",
+    "jv":  "jw",
 }
 
 _TO_DEEPL: dict[str, str] = {
@@ -126,20 +76,9 @@ class Translator:
         self.deepl_api_key = deepl_api_key or os.environ.get("DEEPL_API_KEY", "")
         self.batch_delay   = batch_delay
 
-        # _translate_fn may be a deferred placeholder for argos + auto-detect
         self._translate_fn: Callable[[str], str] = self._build_fn()
 
-    # ──────────────────────────────────────────────────────────────
-    # Public API
-    # ──────────────────────────────────────────────────────────────
-
     def translate(self, text: str) -> str:
-        """
-        Translate a single text string.
-
-        Returns the original text unchanged if the input is blank or if
-        translation raises an exception (with a warning logged).
-        """
         if not text.strip():
             return text
         try:
@@ -154,23 +93,10 @@ class Translator:
         segments: List[Segment],
         source_lang_hint: Optional[str] = None,
     ) -> List[Segment]:
-        """
-        Translate all segments to ``self.target_lang``.
-
-        Args:
-            segments:         Ordered list of :class:`Segment` objects.
-            source_lang_hint: Detected language code passed from the pipeline
-                              (used by the ``argos`` backend to resolve
-                              ``source_lang="auto"``).  If omitted, falls back
-                              to ``segments[0].language``.
-
-        Returns:
-            New deep-copied list with translated text and empty ``words``.
-        """
         if not segments:
             return []
 
-        # ── Resolve argos source language ──────────────────────────
+
         if self.backend == "argos" and self.source_lang == "auto":
             resolved = (
                 source_lang_hint
@@ -191,10 +117,9 @@ class Translator:
             if seg.text.strip():
                 original  = seg.text
                 seg.text  = self.translate(seg.text)
-                seg.words = []   # word timestamps are invalid after translation
+                seg.words = []  # word timestamps no longer valid after translation
                 logger.debug(f"  [{i+1}/{total}] {original!r} → {seg.text!r}")
 
-            # Rate-limit guard for online backends
             if self.backend in ("google", "deepl") and i < total - 1:
                 time.sleep(self.batch_delay)
 
@@ -202,10 +127,6 @@ class Translator:
             f"[Translator] ✓ {total} segment(s) translated → '{self.target_lang}'"
         )
         return out
-
-    # ──────────────────────────────────────────────────────────────
-    # Backend builders
-    # ──────────────────────────────────────────────────────────────
 
     def _build_fn(self) -> Callable[[str], str]:
         if self.backend == "google":
@@ -215,7 +136,6 @@ class Translator:
         elif self.backend == "argos":
             if self.source_lang != "auto":
                 return self._build_argos_fn(src=self.source_lang, tgt=self.target_lang)
-            # Deferred: actual function built in translate_segments once language known
             return lambda text: text
         else:
             raise ValueError(
@@ -281,19 +201,8 @@ class Translator:
             )
         return translation.translate
 
-    # ──────────────────────────────────────────────────────────────
-    # Static helpers
-    # ──────────────────────────────────────────────────────────────
-
     @staticmethod
     def install_argos_package(src: str, tgt: str) -> None:
-        """
-        Download and install the argostranslate language package for *src* → *tgt*.
-
-        Args:
-            src: ISO-639-1 source language code.
-            tgt: ISO-639-1 target language code.
-        """
         try:
             import argostranslate.package    # type: ignore[import]
             import argostranslate.translate  # type: ignore[import]
@@ -319,7 +228,6 @@ class Translator:
         logger.success(f"[Argos] Package installed: {src} → {tgt}")
 
 
-# ── CLI ───────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import argparse

@@ -1,26 +1,3 @@
-"""
-transcription_engine.py
-───────────────────────
-ASR module powered by faster-whisper (CTranslate2 backend).
-
-Key features
-────────────
-• Word-level timestamps  (word_timestamps=True)
-• Silero-VAD pre-filtering to suppress silence / noise hallucinations
-• Multi-language support with automatic detection
-• Structured output via ``Segment`` / ``WordToken`` dataclasses
-
-Data model
-──────────
-  WordToken(word, start, end, probability)
-  Segment(text, start, end, words, language)
-
-Usage (CLI)
-───────────
-    python transcription_engine.py vocals.wav
-    python transcription_engine.py vocals.wav --language zh --model large-v3
-"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -33,23 +10,19 @@ from loguru import logger
 import config
 
 
-# ── Data structures ───────────────────────────────────────────────
-
 @dataclasses.dataclass
 class WordToken:
-    """A single word with its start/end timestamps and confidence score."""
     word:        str
-    start:       float   # seconds
-    end:         float   # seconds
-    probability: float   # 0.0 – 1.0
+    start:       float
+    end:         float
+    probability: float
 
 
 @dataclasses.dataclass
 class Segment:
-    """A contiguous speech segment returned by faster-whisper."""
     text:     str
-    start:    float          # seconds
-    end:      float          # seconds
+    start:    float
+    end:      float
     words:    List[WordToken]
     language: str = ""
 
@@ -94,8 +67,6 @@ class TranscriptionEngine:
         if model is not None:
             self._model = model
         else:
-            # Lazy import so the module can be imported without faster-whisper
-            # being fully initialised (useful for unit tests / CI).
             from download_models import load_whisper_model
             self._model = load_whisper_model(
                 model_size_or_path=model_size,
@@ -103,26 +74,7 @@ class TranscriptionEngine:
                 compute_type=compute_type,
             )
 
-    # ──────────────────────────────────────────────────────────────
-    # Public API
-    # ──────────────────────────────────────────────────────────────
-
     def transcribe(self, audio_path: str | Path) -> List[Segment]:
-        """
-        Transcribe *audio_path* and return a list of :class:`Segment` objects.
-
-        Each segment carries word-level timestamps when available.
-
-        Args:
-            audio_path: Path to the audio file (preferably the vocals-only WAV
-                        produced by :class:`vocal_extractor.VocalExtractor`).
-
-        Returns:
-            Ordered list of :class:`Segment` objects.
-
-        Raises:
-            FileNotFoundError: If *audio_path* does not exist.
-        """
         audio_path = Path(audio_path).resolve()
         if not audio_path.exists():
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
@@ -140,9 +92,7 @@ class TranscriptionEngine:
             word_timestamps=True,
             vad_filter=self.vad_filter,
             vad_parameters={"threshold": self.vad_threshold},
-            # Condition on previous text to improve consistency across segments
             condition_on_previous_text=True,
-            # Suppress common non-speech tokens
             suppress_blank=True,
         )
 
@@ -180,13 +130,9 @@ class TranscriptionEngine:
         )
         return segments
 
-    # ──────────────────────────────────────────────────────────────
-    # Utility
-    # ──────────────────────────────────────────────────────────────
-
     @staticmethod
     def to_json(segments: List[Segment], path: str | Path) -> Path:
-        """Serialise *segments* to a JSON file (for debugging / resuming)."""
+        """Serialise segments to a JSON file."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
@@ -199,7 +145,7 @@ class TranscriptionEngine:
 
     @staticmethod
     def from_json(path: str | Path) -> List[Segment]:
-        """Deserialise segments from a previously saved JSON file."""
+        """Load segments from a JSON file."""
         with open(path, encoding="utf-8") as f:
             raw = json.load(f)
         return [
@@ -214,7 +160,6 @@ class TranscriptionEngine:
         ]
 
 
-# ── CLI ───────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import argparse
