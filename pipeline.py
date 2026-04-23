@@ -17,6 +17,7 @@ from transcription_engine import TranscriptionEngine
 from lrc_generator        import LrcGenerator
 from postprocessor        import PostProcessor
 from translator           import Translator
+from forced_aligner       import ForcedAligner
 
 
 class LyricalAlignerPipeline:
@@ -28,11 +29,13 @@ class LyricalAlignerPipeline:
         demucs_model:        str           = config.DEMUCS_MODEL,
         device:              str           = config.WHISPER_DEVICE,
         skip_separation:     bool          = config.SKIP_SEPARATION,
+        use_forced_align:    bool          = config.USE_FORCED_ALIGN,
         target_lang:         Optional[str] = config.TRANSLATION_TARGET_LANG,
         translation_backend: str           = config.TRANSLATION_BACKEND,
     ) -> None:
-        self.skip_separation = skip_separation
-        self.target_lang     = target_lang.lower().strip() if target_lang else None
+        self.skip_separation  = skip_separation
+        self.use_forced_align = use_forced_align
+        self.target_lang      = target_lang.lower().strip() if target_lang else None
 
         logger.info("Initialising pipeline components …")
 
@@ -42,6 +45,7 @@ class LyricalAlignerPipeline:
             device=device,
             language=language,
         )
+        self.aligner       = ForcedAligner(device=device) if use_forced_align else None
         self.postprocessor = PostProcessor()
         self.translator    = (
             Translator(target_lang=target_lang, backend=translation_backend)
@@ -71,38 +75,45 @@ class LyricalAlignerPipeline:
         # step 1: vocal separation
         if self.skip_separation:
             vocal_path = audio_path
-            logger.info("[Step 1/5] Vocal separation SKIPPED (SKIP_SEPARATION = True in config.py)")
+            logger.info("[Step 1/6] Vocal separation SKIPPED (SKIP_SEPARATION = True in config.py)")
         else:
-            logger.info("[Step 1/5] Vocal separation …")
+            logger.info("[Step 1/6] Vocal separation …")
             vocal_path = self.extractor.extract(audio_path)
 
         # step 2: transcription
-        logger.info("[Step 2/5] Transcription …")
+        logger.info("[Step 2/6] Transcription …")
         segments = self.engine.transcribe(vocal_path)
 
-        # step 3: post-processing
-        logger.info("[Step 3/5] Post-processing …")
+        # step 3: forced alignment (optional)
+        if self.aligner:
+            logger.info("[Step 3/6] Forced alignment …")
+            segments = self.aligner.align(vocal_path, segments)
+        else:
+            logger.info("[Step 3/6] Forced alignment SKIPPED (USE_FORCED_ALIGN = False in config.py)")
+
+        # step 4: post-processing
+        logger.info("[Step 4/6] Post-processing …")
         segments = self.postprocessor.process(segments)
 
-        # step 4: translation
+        # step 5: translation
         detected_lang = segments[0].language if segments else ""
         if self.translator:
             if detected_lang and detected_lang.lower() == self.target_lang:
                 logger.info(
-                    f"[Step 4/5] Translation SKIPPED "
+                    f"[Step 5/6] Translation SKIPPED "
                     f"(detected language '{detected_lang}' already matches target)"
                 )
             else:
                 logger.info(
-                    f"[Step 4/5] Translating '{detected_lang}' → '{self.target_lang}' …"
+                    f"[Step 5/6] Translating '{detected_lang}' → '{self.target_lang}' …"
                 )
                 segments = self.translator.translate_segments(
                     segments, source_lang_hint=detected_lang
                 )
         else:
-            logger.info("[Step 4/5] Translation SKIPPED (TRANSLATION_TARGET_LANG = None in config.py)")
+            logger.info("[Step 5/6] Translation SKIPPED (TRANSLATION_TARGET_LANG = None in config.py)")
 
-        # step 5a: save intermediate JSON
+        # step 6a: save intermediate JSON
         if save_intermediates:
             json_path = output_dir / f"{stem}_segments.json"
             with open(json_path, "w", encoding="utf-8") as f:
@@ -112,8 +123,8 @@ class LyricalAlignerPipeline:
                 )
             logger.info(f"  Segments JSON → {json_path}")
 
-        # step 5b: generate LRC
-        logger.info("[Step 5/5] LRC generation …")
+        # step 6b: generate LRC
+        logger.info("[Step 6/6] LRC generation …")
         self.generator.title  = title  or stem
         self.generator.artist = artist
         self.generator.album  = album

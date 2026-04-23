@@ -54,6 +54,7 @@ DEEPL_API_KEY: str = ""
 
 
 # Pipeline
-SKIP_SEPARATION   = False  # True if input is already vocals-only
-LRC_BY_WORD       = False  # True for word-level Enhanced LRC
+SKIP_SEPARATION    = False  # True if input is already vocals-only
+LRC_BY_WORD        = False  # True for word-level Enhanced LRC
 SAVE_INTERMEDIATES = True
+USE_FORCED_ALIGN   = False  # True to refine word timestamps via CTC forced alignment
