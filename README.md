@@ -1,6 +1,6 @@
 # 🎵 Lyrical-Aligner
 
-> **自动化歌词对齐工具** — 输入音频，输出带毫秒级时间戳的 `.lrc` 文件
+> **自动化歌词生成工具** — 输入任意语言的音频，自动识别并生成带毫秒级时间戳的 `.lrc` 歌词文件，支持翻译为指定语言输出
 
 ---
 
@@ -33,10 +33,10 @@ Lyrical-Aligner/
 
 | 模块 | 技术 | 说明 |
 |------|------|------|
-| 人声分离 | [Demucs (htdemucs)](https://github.com/facebookresearch/demucs) | Facebook Research 混合 Transformer 模型 |
-| 语音识别 | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) | CTranslate2 后端，速度约为原版 4× |
-| Whisper 模型 | `large-v3` | 支持 99 种语言，最高精度 |
-| 翻译 | [deep-translator](https://github.com/nidhaloff/deep-translator) | 封装 Google / DeepL；或离线 argostranslate |
+| 人声分离 | [Demucs (htdemucs)](https://github.com/facebookresearch/demucs) | Facebook Research 混合 Transformer 模型，同时输出纯人声与伴奏 |
+| 语音识别 | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) | CTranslate2 后端，支持 99 种语言自动识别，速度约为原版 4× |
+| 歌词翻译 | [deep-translator](https://github.com/nidhaloff/deep-translator) | 识别后翻译为任意目标语言；封装 Google / DeepL / 离线 argostranslate |
+| LRC 生成 | 内置 | 输出标准 LRC 或词级 Enhanced LRC（A2）格式 |
 | 硬件加速 | CUDA (NVIDIA GPU) | 自动回退到 CPU |
 | 语言 | Python 3.10+ | |
 
@@ -157,6 +157,15 @@ WHISPER_DEVICE          = "cpu"
 WHISPER_COMPUTE_TYPE    = "int8"
 ```
 
+**场景 E — 只需要人声 / 伴奏，不生成 LRC**
+```bash
+# 直接调用人声分离模块，输出 vocals.wav + accompaniment.wav
+python vocal_extractor.py input/song.mp3
+
+# 高质量模型（htdemucs_ft 人声残留更少）
+python vocal_extractor.py input/song.mp3 --model htdemucs_ft
+```
+
 ### 4. 运行流水线
 
 CLI 只需传入音频文件路径，支持一次传入多个文件批量处理：
@@ -172,7 +181,7 @@ python pipeline.py input/song1.mp3 input/song2.wav input/song3.flac
 输出示例：
 ```
 output/
-├── song.lrc              ← 最终歌词文件
+├── song.lrc              ← 生成的歌词文件（含毫秒级时间戳）
 └── song_segments.json    ← 中间段落数据（SAVE_INTERMEDIATES = True 时生成）
 ```
 
@@ -180,12 +189,31 @@ output/
 
 ## 各模块独立使用
 
-### 人声分离
+### 人声分离 / 伴奏提取
+
+Demucs 在分离人声的同时会同时输出伴奏轨，两个文件保存在 `temp/demucs/` 下：
+
+```
+temp/demucs/
+├── song_vocals.wav        ← 纯人声
+└── song_accompaniment.wav ← 伴奏（消人声）
+```
+
+只需要人声或伴奏、不需要生成 LRC 时，可以直接单独调用 `vocal_extractor.py`：
 
 ```bash
+# 基本用法（输出人声 + 伴奏）
 python vocal_extractor.py input/song.mp3
-python vocal_extractor.py input/song.mp3 --model htdemucs_ft --device cpu
+
+# 使用更高质量模型（速度较慢）
+python vocal_extractor.py input/song.mp3 --model htdemucs_ft
+
+# CPU 运行（无 GPU 环境）
+python vocal_extractor.py input/song.mp3 --device cpu
 ```
+
+> 💡 **伴奏用途**：消人声后的伴奏轨可直接用于卡拉OK/KTV 练唱，效果与许多商业伴奏制作方式相同。  
+> 人声轨则可用于二次创作、混音或单独的语音分析。
 
 ### 语音识别
 
@@ -221,6 +249,29 @@ python translator.py --install-argos en zh
 ```bash
 python lrc_generator.py cleaned.json --out song.lrc --title "My Song" --by-word
 ```
+
+---
+
+## 评测管线 (`eval/`)
+
+内置四维度评测框架，按 testset JSON 驱动，各阶段有对应 ground truth 才运行，没有则自动跳过。
+
+| 维度 | 指标 | 参考标准 |
+|------|------|---------|
+| 人声分离 | SDR（dB） | > 10 dB 为良好 |
+| 语音识别 | WER / CER | 越低越好 |
+| 时间戳精度 | MAE（秒）/ Acc@±0.3s | MAE ≤ 0.3 s 为合格 |
+| 翻译质量 | BLEU / chrF | 中文等 CJK 语言以 chrF 为主参考 |
+
+```bash
+# 使用示例 testset 运行（跳过人声分离阶段，复用已有 vocals）
+python eval/eval_pipeline.py --testset eval/testset_example.json --skip-separation
+
+# 保存评测报告
+python eval/eval_pipeline.py --testset eval/testset_example.json --output eval/report.json
+```
+
+**testset 格式**（`eval/testset_example.json`）：每条记录对应一首歌，可选提供 `vocals_ref`（人声参考，用于 SDR）、`segments_ref`（转录参考，用于 WER/MAE）、`translation_ref`（翻译参考，用于 BLEU/chrF）。
 
 ---
 
@@ -285,9 +336,9 @@ python lrc_generator.py cleaned.json --out song.lrc --title "My Song" --by-word
 
 ---
 
-## 🌐 多语言翻译输出
+## 🌐 指定语言歌词输出
 
-> 全部翻译选项均在 `config.py` 中配置。当检测语言与 `TRANSLATION_TARGET_LANG` 相同时，翻译步骤会被自动跳过。
+工具的核心能力之一：识别任意语言的歌曲，将歌词翻译后以目标语言生成 LRC，无需事先找到对应的歌词文本。全部翻译选项均在 `config.py` 中配置，当检测语言与 `TRANSLATION_TARGET_LANG` 相同时，翻译步骤会被自动跳过。
 
 ### 支持的翻译后端
 

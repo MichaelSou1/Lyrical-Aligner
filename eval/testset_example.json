@@ -1,0 +1,29 @@
+[
+  {
+    "name": "Essayer - Arcadian",
+
+    "audio": "input/Essayer - Arcadian.m4a",
+
+    "language": "fr",
+
+    "vocals_ref": null,
+
+    "vocals_path": "temp/demucs/Essayer - Arcadian_vocals.wav",
+
+    "segments_ref": [
+      {"start": 0.000, "end": 2.460, "text": "Essayez ne pas regretter"},
+      {"start": 3.140, "end": 5.460, "text": "Essayez d'y croire, essayez de changer"},
+      {"start": 5.460, "end": 8.020, "text": "Essayez autant qu'ils ont pu se tromper"},
+      {"start": 8.020, "end": 11.760, "text": "Et j'entends se dire, j'entends se dire encore"}
+    ],
+
+    "target_lang": "zh",
+
+    "translation_ref": [
+      {"start": 0.000, "end": 2.460,  "text": "试着不要后悔"},
+      {"start": 3.140, "end": 5.460,  "text": "试着去相信，试着去改变"},
+      {"start": 5.460, "end": 8.020,  "text": "试着像他们一样，哪怕会犯错"},
+      {"start": 8.020, "end": 11.760, "text": "我听到有人说，还在一遍遍地说"}
+    ]
+  }
+]
